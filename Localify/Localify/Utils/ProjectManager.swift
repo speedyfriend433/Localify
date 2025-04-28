@@ -43,37 +43,122 @@ class ProjectManager {
     func saveProject(_ project: Project) {
         let projectURL = projectsURL.appendingPathComponent(project.id.uuidString)
         
-        if !fileManager.fileExists(atPath: projectURL.path) {
-            try? fileManager.createDirectory(at: projectURL, withIntermediateDirectories: true)
-        }
-        
-        let projectDataURL = projectURL.appendingPathComponent("project.json")
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = .prettyPrinted
-        
-        if let data = try? encoder.encode(project) {
-            try? data.write(to: projectDataURL)
-        }
-        
-        // Save individual files
-        for file in project.files {
-            let fileURL = projectURL.appendingPathComponent(file.name).appendingPathExtension(file.type.rawValue)
-            try? file.content.write(to: fileURL, atomically: true, encoding: .utf8)
+        do {
+            if !fileManager.fileExists(atPath: projectURL.path) {
+                try fileManager.createDirectory(at: projectURL, withIntermediateDirectories: true)
+            }
+            
+            let projectDataURL = projectURL.appendingPathComponent("project.json")
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = .prettyPrinted
+            
+            let data = try encoder.encode(project)
+            try data.write(to: projectDataURL, options: .atomic)
+            
+            // Save individual files with error handling
+            for file in project.files {
+                let fileURL = projectURL.appendingPathComponent(file.name).appendingPathExtension(file.type.rawValue)
+                try file.content.write(to: fileURL, atomically: true, encoding: .utf8)
+            }
+            
+            // Update modification date
+            try fileManager.setAttributes([.modificationDate: Date()], ofItemAtPath: projectURL.path)
+        } catch {
+            print("Failed to save project: \(error.localizedDescription)")
         }
     }
     
     func loadProjects() -> [Project] {
-        guard let urls = try? fileManager.contentsOfDirectory(
-            at: projectsURL,
-            includingPropertiesForKeys: nil
-        ) else { return [] }
+        // Ensure projects directory exists
+        createProjectsDirectoryIfNeeded()
         
-        return urls.compactMap { url in
-            let projectDataURL = url.appendingPathComponent("project.json")
-            guard let data = try? Data(contentsOf: projectDataURL),
-                  let project = try? JSONDecoder().decode(Project.self, from: data)
-            else { return nil }
-            return project
+        do {
+            let urls = try fileManager.contentsOfDirectory(
+                at: projectsURL,
+                includingPropertiesForKeys: [.contentModificationDateKey],
+                options: []
+            )
+            
+            // If no projects exist, create a default one
+            if urls.isEmpty {
+                let defaultProject = createProject(name: "My First Project")
+                return [defaultProject]
+            }
+            
+            return try urls.compactMap { url in
+                let projectDataURL = url.appendingPathComponent("project.json")
+                
+                // Verify project.json exists
+                guard fileManager.fileExists(atPath: projectDataURL.path) else {
+                    print("Missing project.json in \(url.lastPathComponent)")
+                    // Attempt to create default files for corrupted project
+                    let projectId = UUID(uuidString: url.lastPathComponent)
+                    if let projectId = projectId {
+                        var project = Project(name: "Recovered Project")
+                        project.id = projectId
+                        
+                        let htmlFile = Project.ProjectFile(name: "index", type: .html, content: getDefaultTemplate(.html))
+                        let cssFile = Project.ProjectFile(name: "styles", type: .css, content: getDefaultTemplate(.css))
+                        let jsFile = Project.ProjectFile(name: "script", type: .js, content: getDefaultTemplate(.js))
+                        
+                        project.addFile(htmlFile)
+                        project.addFile(cssFile)
+                        project.addFile(jsFile)
+                        
+                        saveProject(project)
+                        return project
+                    }
+                    return nil
+                }
+                
+                do {
+                    let data = try Data(contentsOf: projectDataURL)
+                    let project = try JSONDecoder().decode(Project.self, from: data)
+                    
+                    // Verify all project files exist
+                    for file in project.files {
+                        let fileURL = url.appendingPathComponent(file.name).appendingPathExtension(file.type.rawValue)
+                        if !fileManager.fileExists(atPath: fileURL.path) {
+                            // Recreate missing file with default content
+                            let content = file.content.isEmpty ? getDefaultTemplate(file.type) : file.content
+                            try content.write(to: fileURL, atomically: true, encoding: .utf8)
+                        }
+                    }
+                    
+                    return project
+                } catch {
+                    print("Failed to decode project: \(error.localizedDescription)")
+                    
+                    // Create fresh project if decoding fails
+                    let projectId = UUID(uuidString: url.lastPathComponent)
+                    if let projectId = projectId {
+                        var project = Project(name: "Recovered Project")
+                        project.id = projectId
+                        
+                        let htmlFile = Project.ProjectFile(name: "index", type: .html, content: getDefaultTemplate(.html))
+                        let cssFile = Project.ProjectFile(name: "styles", type: .css, content: getDefaultTemplate(.css))
+                        let jsFile = Project.ProjectFile(name: "script", type: .js, content: getDefaultTemplate(.js))
+                        
+                        project.addFile(htmlFile)
+                        project.addFile(cssFile)
+                        project.addFile(jsFile)
+                        
+                        saveProject(project)
+                        return project
+                    }
+                    return nil
+                }
+            }
+        } catch {
+            print("Failed to load projects: \(error.localizedDescription)")
+            
+            // If error occurs but projects directory exists, try creating default project
+            if fileManager.fileExists(atPath: projectsURL.path) {
+                let defaultProject = createProject(name: "My First Project")
+                return [defaultProject]
+            }
+            
+            return []
         }
     }
     

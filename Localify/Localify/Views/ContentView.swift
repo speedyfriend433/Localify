@@ -95,6 +95,13 @@ struct ContentView: View {
                             loadFiles()
                         }
                     )
+                } else {
+                    EmptyView()
+                }
+            }
+            .onChange(of: selectedFile) { _, newFile in
+                if let file = newFile {
+                    editFileContent = file.content
                 }
             }
             .sheet(isPresented: $showDocumentPicker) {

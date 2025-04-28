@@ -47,8 +47,7 @@ struct MainTabView: View {
                     ProjectCreationView(
                         showNewProjectSheet: $showNewProjectSheet,
                         onCreate: { name in
-                            let project = Project(name: name)
-                            ProjectManager.shared.saveProject(project)
+                            let project = ProjectManager.shared.createProject(name: name)
                             selectedProject = project
                             projects = ProjectManager.shared.loadProjects()
                         }

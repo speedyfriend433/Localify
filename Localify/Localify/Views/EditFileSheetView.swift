@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import CodeEditor // Import the CodeEditor library
 
 struct EditFileSheetView: View {
     let fileName: String
@@ -11,17 +12,29 @@ struct EditFileSheetView: View {
     @Binding var editFileContent: String
     let onCancel: () -> Void
     let onSave: () -> Void
-    
+
+    // Determine the CodeEditor language based on fileType
+    // Determine the CodeEditor language based on fileType
+    private var codeEditorLanguage: CodeEditor.Language {
+        switch fileType {
+        case .css: return .css
+        case .js: return .javascript
+        default: return .json
+        }
+    }
+
     var body: some View {
         NavigationView {
-            Form {
-                Section(header: Text("Editing: \(fileName).\(fileType.rawValue)")) {
-                    TextEditor(text: $editFileContent)
-                        .frame(minHeight: 400)
-                        .font(.system(size: 14, design: .monospaced))
-                }
+            VStack(spacing: 0) { // Use VStack to contain the editor
+                CodeEditor(
+                    source: $editFileContent,
+                    language: codeEditorLanguage,
+                    theme: .ocean // Use the correct theme name enum
+                )
+                .frame(minHeight: 400)
             }
-            .navigationTitle("Edit File")
+            .navigationTitle("Edit File: \(fileName).\(fileType.rawValue)")
+            .navigationBarTitleDisplayMode(.inline) // Keep title concise
             .navigationBarItems(
                 leading: Button("Cancel", action: onCancel),
                 trailing: Button("Save", action: onSave)
